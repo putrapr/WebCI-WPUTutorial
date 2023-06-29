@@ -8,7 +8,7 @@ class Komik extends BaseController {
   protected $komikModel;
   public function __construct() {
     $this->komikModel = new KomikModel();
-    session();
+    
   }
 
   public function index() {
@@ -35,13 +35,31 @@ class Komik extends BaseController {
   }
 
   public function create() {
+    $validation = (isset(session()->validation))? session()->validation : \Config\Services::validation() ;
     $data = [
-      'title' => 'Form Tambah Data Komik'
+      'title' => 'Form Tambah Data Komik',
+      'validation' => $validation
     ];
+    unset(session()->validation);
     return view('/komik/create', $data);
   }
 
   public function save(){
+    $rules = [
+      'judul' => [
+        'rules' => 'required|is_unique[komik.judul]',
+        'errors' => [
+          'required' => 'Judul komik harus diisi',
+          'is_unique' => 'Judul komik sudah terdaftar'
+        ]
+      ]
+    ];
+
+    if (!$this->validate($rules)) {
+      session()->setFlashdata('validation', $this->validator);
+      return redirect()->to('/komik/create')->withInput();
+    }
+
     $slug = url_title($this->request->getVar('judul'), '-', true);
     $this->komikModel->save([
       'judul' => $this->request->getVar('judul'),
@@ -54,5 +72,6 @@ class Komik extends BaseController {
     session()->setFlashdata('pesan','Data berhasil ditambahkan.');
 
     return redirect()->to('/komik');
+
   }
 }
