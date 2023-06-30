@@ -34,8 +34,8 @@ class Komik extends BaseController {
     return view('komik/detail', $data);
   }
 
-  public function create() {
-    $validation = (isset(session()->validation))? session()->validation : \Config\Services::validation() ;
+  public function create() {    
+    $validation = (isset(session()->validation))? session()->validation : \Config\Services::validation();
     $data = [
       'title' => 'Form Tambah Data Komik',
       'validation' => $validation
@@ -53,10 +53,24 @@ class Komik extends BaseController {
           'is_unique' => 'Judul komik sudah terdaftar'
         ]
       ]
+      // ,
+      // 'sampul' => [
+      //   'rules' => 'uploaded[sampul]|max_size[sampul,1024]|is_image[sampul]|mime_in[sampul,image/jpg,image/jpeg,image/png]',
+      //   'errors' => [
+      //     'uploaded' => 'Pilih gambar sampul terlebih dahulu',
+      //     'max_size' => 'Ukuran gambar terlalu besar',
+      //     'is_image' => 'Yang anda pilih bukan gambar',
+      //     'mime_in' => 'Yang anda pilh bukan gambar' 
+      //   ]
+      // ]
+
+      //, 'sampul' => 'uploaded[sampul]|max_size[sampul,1024]|is_image[sampul]|mime_in[sampul,image/jpg,image/jpeg,image/png]'
+      , 'sampul' => 'uploaded[sampul]'
     ];
 
-    if (!$this->validate($rules)) {
+    if (!$this->validate($rules)) {      
       session()->setFlashdata('validation', $this->validator);
+      // dd(session()->validation);
       return redirect()->to('/komik/create')->withInput();
     }
 
