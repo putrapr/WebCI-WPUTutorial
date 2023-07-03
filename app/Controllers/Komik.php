@@ -34,17 +34,26 @@ class Komik extends BaseController {
     return view('komik/detail', $data);
   }
 
-  public function create() {    
-    $validation = (isset(session()->validation))? session()->validation : \Config\Services::validation();
+  public function create() {   
+    $old = array(
+      'judul' => '',
+      'penulis' => '',
+      'penerbit' => ''
+    ); 
     $data = [
       'title' => 'Form Tambah Data Komik',
-      'validation' => $validation
+      'validation' => \Config\Services::validation(),
+      'old' => $old
     ];
-    unset(session()->validation);
     return view('/komik/create', $data);
   }
 
   public function save() {
+    $judul = $this->request->getVar('judul');
+    $slug = url_title($judul, '-', true);
+    $penulis = $this->request->getVar('penulis');
+    $penerbit = $this->request->getVar('penerbit');
+
     $rules = [
       'judul' => [
         'rules' => 'required|is_unique[komik.judul]',
@@ -52,68 +61,149 @@ class Komik extends BaseController {
           'required' => 'Judul komik harus diisi',
           'is_unique' => 'Judul komik sudah terdaftar'
         ]
+      ],
+      'sampul' => [
+        'rules' => 'max_size[sampul,1024]|is_image[sampul]|mime_in[sampul,image/jpg,image/jpeg,image/png]',
+        'errors' => [
+          'max_size' => 'Ukuran gambar terlalu besar',
+          'is_image' => 'Yang anda pilih bukan gambar',
+          'mime_in' => 'Yang anda pilh bukan gambar' 
+        ]
       ]
-      // ,
-      // 'sampul' => [
-      //   'rules' => 'uploaded[sampul]|max_size[sampul,1024]|is_image[sampul]|mime_in[sampul,image/jpg,image/jpeg,image/png]',
-      //   'errors' => [
-      //     'uploaded' => 'Pilih gambar sampul terlebih dahulu',
-      //     'max_size' => 'Ukuran gambar terlalu besar',
-      //     'is_image' => 'Yang anda pilih bukan gambar',
-      //     'mime_in' => 'Yang anda pilh bukan gambar' 
-      //   ]
-      // ]
-
-      //, 'sampul' => 'uploaded[sampul]|max_size[sampul,1024]|is_image[sampul]|mime_in[sampul,image/jpg,image/jpeg,image/png]'
-      , 'sampul' => 'uploaded[sampul]'
     ];
 
-    if (!$this->validate($rules)) {      
-      session()->setFlashdata('validation', $this->validator);
-      // dd(session()->validation);
-      return redirect()->to('/komik/create')->withInput();
+    if (!$this->validate($rules)) {
+      $old = array(
+        'judul' => $judul,
+        'penulis' => $penulis,
+        'penerbit' => $penerbit
+      );
+      $data = [
+        'title' => 'Form Tambah Data Komik',
+        'validation' => $this->validator,
+        'old' => $old
+      ];
+      return view('/komik/create', $data);
     }
 
-    $slug = url_title($this->request->getVar('judul'), '-', true);
+    // ambil gambar
+    $fileSampul = $this->request->getFile('sampul');
+    // apakah tidak ada gambar yang diupload
+    if ($fileSampul->getError() == 4) {
+      $namaSampul = 'default.jpg';
+    } else {
+      // generate name sampul random
+      $namaSampul = $fileSampul->getRandomName();
+      // pindahkan file ke folder img
+      $fileSampul->move('img', $namaSampul);
+    }
+
     $this->komikModel->save([
-      'judul' => $this->request->getVar('judul'),
+      'judul' => $judul,
       'slug' => $slug,
-      'penulis' => $this->request->getVar('penulis'),
-      'penerbit' => $this->request->getVar('penerbit'),
-      'sampul' => $this->request->getVar('sampul')
+      'penulis' => $penulis,
+      'penerbit' => $penerbit,
+      'sampul' => $namaSampul
     ]);
 
     session()->setFlashdata('pesan','Data berhasil ditambahkan.');
-
     return redirect()->to('/komik');
   }
 
   public function delete($id) {
+    // cari gambar berdasarkan id
+    $komik = $this->komikModel->find($id);
+
+    // cek jika file gambarnya default.jpg
+    if ($komik['sampul'] != 'default.jpg') {
+      // hapus gambar
+      unlink('img/'. $komik['sampul']);
+    }
+
     $this->komikModel->delete($id);
     session()->setFlashdata('pesan', 'Data berhasil dihapus');
     return redirect()->to('/komik');
   }
 
   public function edit($slug) {
-    $validation = (isset(session()->validation))? session()->validation : \Config\Services::validation() ;
+    $komiks = $this->komikModel->getKomik($slug);
+
+    $old = array(
+      'judul' => $komiks['judul'],
+      'slug' => $komiks['slug'],
+      'penulis' => $komiks['penulis'],
+      'penerbit' => $komiks['penerbit'],
+      'sampulLama' => $komiks['sampul'],
+    );
+
     $data = [
       'title' => 'Form Ubah Data Komik',
-      'validation' => $validation, 
-      'komik' => $this->komikModel->getKomik($slug)
+      'validation' => \Config\Services::validation(),
+      'old' => $old,
+      'komik' => $komiks
     ];
-    unset(session()->validation);
     return view('/komik/edit', $data);
   }
 
   public function update($id) {
-    // cek judul
-    $komikLama = $this->komikModel->getKomik($this->request->getVar('slug'));
-    if ($komikLama['judul'] == $this->request->getVar('judul')) {
+    // Dapatkan data
+    $dataInput = array(
+      'judulLama'=> $this->komikModel->getKomik($this->request->getVar('slug'))['judul'],
+      'judul' => $this->request->getVar('judul'),
+      'slug' => url_title($this->request->getVar('judul'), '-', true),
+      'penulis' => $this->request->getVar('penulis'),
+      'penerbit' => $this->request->getVar('penerbit'),
+      'sampulLama' => $this->request->getVar('sampulLama'),
+    );
+
+    // Validasi
+    if (!$this->validasiUpdate($dataInput)){
+      $data = [
+        'title' => 'Form Tambah Data Komik',
+        'validation' => $this->validator,
+        'old' => $dataInput,
+        'komik' => $this->komikModel->getKomik($this->request->getVar('slug'))
+      ];
+      return view('/komik/edit', $data);
+    }   
+
+    $fileSampul = $this->request->getFile('sampul');
+    // cek gambar, apakah tetap gambar lama
+    if ($fileSampul->getError() == 4) {
+      $namaSampul = $dataInput['sampulLama'];
+    } else {
+      // generate nama file random
+      $namaSampul = $fileSampul->getRandomName();
+      // pindahkan gambar
+      $fileSampul->move('img', $namaSampul);
+      // hapus file yang lama
+      if ($dataInput['sampulLama'] != 'default.jpg') {
+        unlink('img/' . $dataInput['sampulLama']);
+      }
+    }
+
+    $this->komikModel->save([
+      'id' => $id,
+      'judul' => $dataInput['judul'],
+      'slug' => $dataInput['slug'],
+      'penulis' => $dataInput['penulis'],
+      'penerbit' => $dataInput['penerbit'],
+      'sampul' => $namaSampul
+    ]);
+
+    session()->setFlashdata('pesan','Data berhasil diubah.');
+
+    return redirect()->to('/komik');
+  }
+
+  public function validasiUpdate($data){
+    // Cek Judul
+    if ($data['judulLama'] == $data['judul']) {
       $rule_judul = 'required';
     } else {
       $rule_judul = 'required|is_unique[komik.judul]';
-    }      
-    
+    }
+
     $rules = [
       'judul' => [
         'rules' => $rule_judul,
@@ -121,27 +211,19 @@ class Komik extends BaseController {
           'required' => 'Judul komik harus diisi',
           'is_unique' => 'Judul komik sudah terdaftar'
         ]
-      ]
+      ],
+      'sampul' => [
+        'rules' => 'max_size[sampul,1024]|is_image[sampul]|mime_in[sampul,image/jpg,image/jpeg,image/png]',
+        'errors' => [
+          'max_size' => 'Ukuran gambar terlalu besar',
+          'is_image' => 'Yang anda pilih bukan gambar',
+          'mime_in' => 'Yang anda pilh bukan gambar' 
+        ]
+      ]      
     ];
-
     if (!$this->validate($rules)) {
-      session()->setFlashdata('validation', $this->validator);
-      return redirect()->to('/komik/edit/'. $this->request->getVar('slug'))->withInput();
+      return false;
     }
-
-
-    $slug = url_title($this->request->getVar('judul'), '-', true);
-    $this->komikModel->save([
-      'id' => $id,
-      'judul' => $this->request->getVar('judul'),
-      'slug' => $slug,
-      'penulis' => $this->request->getVar('penulis'),
-      'penerbit' => $this->request->getVar('penerbit'),
-      'sampul' => $this->request->getVar('sampul')
-    ]);
-
-    session()->setFlashdata('pesan','Data berhasil diubah.');
-
-    return redirect()->to('/komik');
+    return true;    
   }
 }
